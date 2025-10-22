@@ -189,8 +189,4 @@ RECAP_V2.txt
 # run_hft_bot.py
 # start_bot.bat
 # train_ml.bat
-!Production/config.json
-!Prototype/Prototype/CursorDev/env.md
-*.pyi
-*.pyd
 *.md
