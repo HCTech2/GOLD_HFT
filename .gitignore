@@ -166,21 +166,14 @@ env_template.txt
 CIRCUIT_BREAKER_GUIDE_VISUEL.txt
 RECAP_V2.txt
 
-# ============ KEEP: Documentation Importante ============
-# Les fichiers suivants SONT versionnés
-# !README.md
-# !GUIDE_*.md
-# !CORRECTION_*.md
-# !STRATEGIE_*.md
-# !ARCHITECTURE_*.md
-# !DIAGNOSTIC_*.md
-# !CIRCUIT_BREAKER_*.md
-# !AMELIORATIONS_*.md
-# !OPTIMISATION_*.md
-# !REFACTORISATION_*.md
-# !TEST_*.md
-# !DEPLOIEMENT_*.md
-# !EXPORT_*.md
+# ============ Documentation Markdown ============
+# Exclure TOUS les .md sauf README.md principal
+*.md
+!README.md
+
+# Exclure les .md dans les sous-dossiers aussi
+**/*.md
+!README.md
 
 # ============ KEEP: Structure Essentielle ============
 # Ces dossiers/fichiers SONT versionnés :
