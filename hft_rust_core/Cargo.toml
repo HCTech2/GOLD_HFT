@@ -1,0 +1,26 @@
+[package]
+name = "hft_rust_core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "hft_rust_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38"] }
+numpy = "0.20"
+ndarray = "0.15"
+rayon = "1.8"
+parking_lot = "0.12"
+crossbeam = "0.8"
+chrono = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.dev]
+opt-level = 0
