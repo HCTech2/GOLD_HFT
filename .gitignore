@@ -1,0 +1,202 @@
+# ========================================
+# .gitignore pour GOLD_HFT Bot
+# ========================================
+
+# ============ Environnements Virtuels ============
+.venv/
+venv/
+venv_balance/
+env/
+ENV/
+*.virtualenv
+
+# ============ Python Cache ============
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# ============ Logs ============
+*.log
+hft_bot_*.log
+backtest_log.log
+data_collection.log
+correction_detection.log
+dynamic_exit_manager.log
+fiscaliste.log
+autocleaner.log
+diagnose_*.log
+diagnostic_*.log
+
+# ============ Données Générées ML ============
+ml/data/*.db
+ml/data/*.db-journal
+ml/models/*.pkl
+ml/models/*.joblib
+models/*.pkl
+models/*.joblib
+*.h5
+*.keras
+
+# ============ Données de Marché ============
+data/
+shared_data/
+calendar_events*.csv
+geolocation_cache.json
+
+# ============ Configuration Personnelle ============
+config.json
+comptable_data.json
+comptable_data.json.bak.*
+*.json.bak.*
+chart_config.json
+features.json
+hyperparams.json
+strategy_config.json
+granular_strategy_config.json
+
+# ============ Fichiers CSV Temporaires ============
+*.csv
+!requirements*.csv
+honeypot_data.csv
+
+# ============ Builds Rust ============
+hft_rust_core/target/
+hft_rust_core/Cargo.lock
+*.so
+*.pyd
+*.dll
+*.dylib
+
+# ============ Archives et Exports ============
+*.zip
+*.tar.gz
+*.rar
+HFT_Bot_Export_*/
+HFT_Bot_Complete.zip
+
+# ============ Anciens Scripts (non utilisés) ============
+Balance.py
+Collecteur.py
+Comptable.py
+Comptable2.py
+Comptable3.py
+Config.py
+Controleur.py
+Judge.py
+Main.py
+Metrics.py
+MLMonitoring.py
+MLValidation.py
+Organiseur.py
+POF.py
+POF1.py
+Scener.py
+Sleeper.py
+SleeperParam1.py
+SleeperParam2.py
+TrailingTester.py
+WandB.py
+XAU_USD_HFT_Bot.py
+Zzz*.py
+ZZZZ*.py
+get_mt5_tick_volume.py
+pip_utils.py
+signal_utils.py
+time_features.py
+benchmark_indicators.py
+
+# ============ Scripts de Build/Deploy ============
+create_package.ps1
+create_transfer_package.ps1
+package_for_transfer.ps1
+export_system.py
+build_rust.py
+watch_orders.ps1
+
+# ============ Tests et Scripts Temporaires ============
+test_*.py
+check_*.py
+run_sleeper_*.py
+HFT_Backtest_Visual.py
+autocleaner.py
+
+# ============ Dossiers Legacy ============
+Prototype/
+PrototypeMTB2/
+SandBox/
+DiscordBOT/
+analytics/
+tools/
+Z_Comptable/
+
+# ============ Fichiers Système ============
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+
+# ============ IDE et Editeurs ============
+.vscode/
+.idea/
+*.sublime-*
+.project
+.pydevproject
+
+# ============ Wandb (Machine Learning) ============
+wandb/
+
+# ============ Images Debug ============
+*.png
+*.jpg
+*.jpeg
+!docs/*.png
+!assets/*.png
+
+# ============ Fichiers HTML Temporaires ============
+*.html
+!docs/*.html
+
+# ============ Fichiers Texte Temporaires ============
+analyse_economique.txt
+env_template.txt
+CIRCUIT_BREAKER_GUIDE_VISUEL.txt
+RECAP_V2.txt
+
+# ============ KEEP: Documentation Importante ============
+# Les fichiers suivants SONT versionnés
+# !README.md
+# !GUIDE_*.md
+# !CORRECTION_*.md
+# !STRATEGIE_*.md
+# !ARCHITECTURE_*.md
+# !DIAGNOSTIC_*.md
+# !CIRCUIT_BREAKER_*.md
+# !AMELIORATIONS_*.md
+# !OPTIMISATION_*.md
+# !REFACTORISATION_*.md
+# !TEST_*.md
+# !DEPLOIEMENT_*.md
+# !EXPORT_*.md
+
+# ============ KEEP: Structure Essentielle ============
+# Ces dossiers/fichiers SONT versionnés :
+# config/
+# gui/
+# trading/
+# utils/
+# ml/*.py
+# indicators/
+# hft_rust_core/src/
+# hft_rust_core/Cargo.toml
+# hft_rust_core/pyproject.toml
+# run_hft_bot.py
+# start_bot.bat
+# train_ml.bat
+!Production/config.json
+!Prototype/Prototype/CursorDev/env.md
+*.pyi
+*.pyd
