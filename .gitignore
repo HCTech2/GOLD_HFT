@@ -200,3 +200,4 @@ RECAP_V2.txt
 !Prototype/Prototype/CursorDev/env.md
 *.pyi
 *.pyd
+*.md
