@@ -48,9 +48,10 @@ class HFTBotGUI:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         # Variables de paramètres ajustables (APRÈS la création de root)
-        self.sl_multiplier = tk.IntVar(value=100)  # 100 = 1.0x
-        self.tp_multiplier = tk.IntVar(value=100)  # 100 = 1.0x
-        self.volume_multiplier = tk.IntVar(value=100)  # 100 = 1.0x
+        # 🎯 Valeurs par défaut optimales pour Gold (XAUUSD)
+        self.sl_multiplier = tk.IntVar(value=51)   # 51% = 0.51x (SL plus serré)
+        self.tp_multiplier = tk.IntVar(value=155)  # 155% = 1.55x (TP plus large)
+        self.volume_multiplier = tk.IntVar(value=50)  # 50% = 0.50x (volume réduit pour sécurité)
         self.spread_max = tk.DoubleVar(value=config.spread_threshold)
         
         # Paramètres Ichimoku
@@ -67,7 +68,12 @@ class HFTBotGUI:
         self.enable_kill_zone_var = tk.BooleanVar(value=config.kill_zone_enabled)
         self.ignore_stc_var = tk.BooleanVar(value=config.ignore_stc)
         self.max_orders_var = tk.IntVar(value=config.max_simultaneous_orders)
+        self.max_positions_var = tk.IntVar(value=getattr(config, 'max_positions', 10))  # 🎯 Positions max (DIRECT + SWEEP)
+        self.min_seconds_between_trades_var = tk.IntVar(value=getattr(config, 'min_seconds_between_trades', 5))  # ⏱️ Cooldown entre ordres
         self.strategy_timeframe_var = tk.StringVar(value=config.strategy_timeframe)
+        
+        # 🆕 Filtre Multi-Timeframe HTF (nouveau)
+        self.mtf_filter_enabled_var = tk.BooleanVar(value=config.mtf_filter_enabled)
         
         # Profit Réactif (nouveau)
         self.reactive_profit_enabled_var = tk.BooleanVar(value=config.reactive_profit_enabled)
@@ -76,6 +82,10 @@ class HFTBotGUI:
         
         # 🌊 Sweep - Mise de départ (nouveau)
         self.sweep_base_volume_var = tk.DoubleVar(value=getattr(config, 'sweep_base_volume', 0.01))
+        
+        # 📤 DIRECT - Volume de base (nouveau)
+        direct_base_vol = config.position_sizes[0] if config.position_sizes else 0.01
+        self.direct_base_volume_var = tk.DoubleVar(value=direct_base_vol)
 
         # 🧠 ML Trainer - paramètres interactifs
         self.ml_dataset_limit_var = tk.StringVar(value="")
@@ -658,6 +668,114 @@ class HFTBotGUI:
             selectcolor=self.accent_color
         ).pack(anchor=tk.W, padx=5, pady=3)
         
+        # ===== RÉACTIVITÉ & TRADING =====
+        reactivity_frame = tk.LabelFrame(
+            scrollable_frame,
+            text="⚡ Réactivité & Trading",
+            font=("Arial", 12, "bold"),
+            bg=self.bg_color,
+            fg=self.accent_color,
+            padx=15,
+            pady=10
+        )
+        reactivity_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # tick_analysis_interval (en ms)
+        self.tick_interval_var = tk.DoubleVar(value=getattr(self.config, 'tick_analysis_interval', 0.001) * 1000)
+        tick_interval_container = tk.Frame(reactivity_frame, bg=self.bg_color)
+        tick_interval_container.pack(fill=tk.X, pady=5)
+        tk.Label(tick_interval_container, text="Intervalle analyse ticks (ms):", bg=self.bg_color, fg=self.fg_color, font=("Arial", 10)).pack(side=tk.LEFT, padx=5)
+        tick_interval_scale = tk.Scale(
+            tick_interval_container, from_=0.1, to=10.0, resolution=0.1, orient=tk.HORIZONTAL,
+            variable=self.tick_interval_var, length=200, bg=self.bg_color, fg=self.fg_color, highlightthickness=0
+        )
+        tick_interval_scale.pack(side=tk.LEFT, padx=5)
+        self.tick_interval_value = tk.Label(tick_interval_container, text=f"{self.tick_interval_var.get():.1f}ms", font=("Arial", 10, "bold"), bg=self.bg_color, fg=self.success_color, width=10)
+        self.tick_interval_value.pack(side=tk.LEFT, padx=5)
+        tick_interval_scale.config(command=lambda v: self.tick_interval_value.config(text=f"{float(v):.1f}ms"))
+        
+        # min_seconds_between_trades (déplacé ici depuis "Contrôles")
+        # extreme_stc_threshold
+        self.extreme_stc_var = tk.DoubleVar(value=getattr(self.config, 'extreme_stc_threshold', 15.0))
+        extreme_stc_container = tk.Frame(reactivity_frame, bg=self.bg_color)
+        extreme_stc_container.pack(fill=tk.X, pady=5)
+        tk.Label(extreme_stc_container, text="Seuil STC extrême:", bg=self.bg_color, fg=self.fg_color, font=("Arial", 10)).pack(side=tk.LEFT, padx=5)
+        extreme_stc_scale = tk.Scale(
+            extreme_stc_container, from_=10, to=40, resolution=1, orient=tk.HORIZONTAL,
+            variable=self.extreme_stc_var, length=200, bg=self.bg_color, fg=self.fg_color, highlightthickness=0
+        )
+        extreme_stc_scale.pack(side=tk.LEFT, padx=5)
+        self.extreme_stc_value = tk.Label(extreme_stc_container, text=f"{self.extreme_stc_var.get():.0f}", font=("Arial", 10, "bold"), bg=self.bg_color, fg=self.success_color, width=10)
+        self.extreme_stc_value.pack(side=tk.LEFT, padx=5)
+        extreme_stc_scale.config(command=lambda v: self.extreme_stc_value.config(text=f"{float(v):.0f}"))
+        
+        # ===== SWEEP ELLIOTT WAVE =====
+        sweep_params_frame = tk.LabelFrame(
+            scrollable_frame,
+            text="🌊 Sweep Elliott Wave",
+            font=("Arial", 12, "bold"),
+            bg=self.bg_color,
+            fg=self.accent_color,
+            padx=15,
+            pady=10
+        )
+        sweep_params_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # sweep_base_volume (déjà défini plus haut, mais on rajoute sweep_max_levels)
+        # sweep_max_levels
+        self.sweep_levels_var = tk.IntVar(value=getattr(self.config, 'sweep_max_levels', 4))
+        sweep_levels_container = tk.Frame(sweep_params_frame, bg=self.bg_color)
+        sweep_levels_container.pack(fill=tk.X, pady=5)
+        tk.Label(sweep_levels_container, text="Niveaux maximum:", bg=self.bg_color, fg=self.fg_color, font=("Arial", 10)).pack(side=tk.LEFT, padx=5)
+        sweep_levels_spin = tk.Spinbox(
+            sweep_levels_container, from_=4, to=12, textvariable=self.sweep_levels_var, width=5, font=("Arial", 10)
+        )
+        sweep_levels_spin.pack(side=tk.LEFT, padx=5)
+        
+        # sweep_orders_per_level
+        self.sweep_orders_per_level_var = tk.IntVar(value=getattr(self.config, 'sweep_orders_per_level', 10))
+        sweep_orders_container = tk.Frame(sweep_params_frame, bg=self.bg_color)
+        sweep_orders_container.pack(fill=tk.X, pady=5)
+        tk.Label(sweep_orders_container, text="Ordres par niveau:", bg=self.bg_color, fg=self.fg_color, font=("Arial", 10)).pack(side=tk.LEFT, padx=5)
+        sweep_orders_spin = tk.Spinbox(
+            sweep_orders_container, from_=1, to=10, textvariable=self.sweep_orders_per_level_var, width=5, font=("Arial", 10)
+        )
+        sweep_orders_spin.pack(side=tk.LEFT, padx=5)
+        tk.Label(
+            sweep_orders_container, 
+            text="(nombre d'ordres placés simultanément à chaque niveau)", 
+            bg=self.bg_color, 
+            fg="#888888", 
+            font=("Arial", 9, "italic")
+        ).pack(side=tk.LEFT, padx=10)
+        
+        # ===== PROTECTIONS AVANCÉES =====
+        protection_advanced_frame = tk.LabelFrame(
+            scrollable_frame,
+            text="🛡️ Protections Avancées",
+            font=("Arial", 12, "bold"),
+            bg=self.bg_color,
+            fg=self.accent_color,
+            padx=15,
+            pady=10
+        )
+        protection_advanced_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # risk_max_consecutive_losses (déjà défini dans Circuit Breaker)
+        # risk_cooldown_after_loss_streak_minutes (déjà défini dans Circuit Breaker)
+        # risk_max_correlated_positions (déjà défini dans Circuit Breaker)
+        # risk_max_portfolio_risk_percent (déjà défini dans Circuit Breaker)
+        
+        # Note: Ces paramètres sont déjà dans le Circuit Breaker, donc on ajoute juste des labels informatifs
+        tk.Label(
+            protection_advanced_frame,
+            text="Les protections avancées sont configurées dans la section 'Circuit Breaker' ci-dessous.",
+            font=("Arial", 9, "italic"),
+            bg=self.bg_color,
+            fg=self.warning_color,
+            justify=tk.LEFT
+        ).pack(anchor=tk.W, pady=5)
+        
         # ===== CONTRÔLES =====
         controls_frame = tk.LabelFrame(
             scrollable_frame,
@@ -696,6 +814,19 @@ class HFTBotGUI:
         )
         ignore_stc_check.pack(anchor=tk.W, padx=5, pady=5)
         
+        # 🆕 Filtre Multi-Timeframe HTF
+        mtf_filter_check = tk.Checkbutton(
+            controls_frame,
+            text="🎯 Activer Filtre Multi-Timeframe HTF (M15/M30/H1/H4)",
+            variable=self.mtf_filter_enabled_var,
+            command=self.update_mtf_filter,
+            font=("Arial", 10),
+            bg=self.bg_color,
+            fg=self.fg_color,
+            selectcolor=self.accent_color
+        )
+        mtf_filter_check.pack(anchor=tk.W, padx=5, pady=5)
+        
         # Max ordres
         max_orders_container = tk.Frame(controls_frame, bg=self.bg_color)
         max_orders_container.pack(anchor=tk.W, padx=5, pady=5)
@@ -720,6 +851,56 @@ class HFTBotGUI:
         max_orders_spin.pack(side=tk.LEFT, padx=5)
         max_orders_spin.bind('<Return>', lambda e: self.update_max_orders())
         max_orders_spin.bind('<FocusOut>', lambda e: self.update_max_orders())
+        
+        # Max positions (DIRECT + SWEEP)
+        max_positions_container = tk.Frame(controls_frame, bg=self.bg_color)
+        max_positions_container.pack(anchor=tk.W, padx=5, pady=5)
+        
+        tk.Label(
+            max_positions_container,
+            text="🎯 Max Positions (DIRECT + SWEEP):",
+            font=("Arial", 10, "bold"),
+            bg=self.bg_color,
+            fg=self.accent_color
+        ).pack(side=tk.LEFT, padx=5)
+        
+        max_positions_spin = tk.Spinbox(
+            max_positions_container,
+            from_=1,
+            to=50,
+            textvariable=self.max_positions_var,
+            width=5,
+            font=("Arial", 10),
+            command=self.update_max_positions
+        )
+        max_positions_spin.pack(side=tk.LEFT, padx=5)
+        max_positions_spin.bind('<Return>', lambda e: self.update_max_positions())
+        max_positions_spin.bind('<FocusOut>', lambda e: self.update_max_positions())
+        
+        # Cooldown entre ordres (DIRECT + SWEEP)
+        cooldown_container = tk.Frame(controls_frame, bg=self.bg_color)
+        cooldown_container.pack(anchor=tk.W, padx=5, pady=5)
+        
+        tk.Label(
+            cooldown_container,
+            text="⏱️ Cooldown entre ordres (secondes):",
+            font=("Arial", 10),
+            bg=self.bg_color,
+            fg=self.fg_color
+        ).pack(side=tk.LEFT, padx=5)
+        
+        cooldown_spin = tk.Spinbox(
+            cooldown_container,
+            from_=1,
+            to=60,
+            textvariable=self.min_seconds_between_trades_var,
+            width=5,
+            font=("Arial", 10),
+            command=self.update_cooldown
+        )
+        cooldown_spin.pack(side=tk.LEFT, padx=5)
+        cooldown_spin.bind('<Return>', lambda e: self.update_cooldown())
+        cooldown_spin.bind('<FocusOut>', lambda e: self.update_cooldown())
         
         # ===== PROFIT RÉACTIF (NOUVEAU) =====
         profit_frame = tk.LabelFrame(
@@ -826,6 +1007,96 @@ class HFTBotGUI:
             command=lambda v: self.profit_cumulative_value.config(text=f"{float(v):.0f}$")
         )
         
+        # ===== 📤 DIRECT - VOLUME DE BASE =====
+        direct_volume_frame = tk.LabelFrame(
+            scrollable_frame,
+            text="📤 Ordres DIRECT - Volume de Base",
+            font=("Arial", 12, "bold"),
+            bg=self.bg_color,
+            fg=self.accent_color,
+            padx=15,
+            pady=10
+        )
+        direct_volume_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Explication
+        direct_info = tk.Label(
+            direct_volume_frame,
+            text="Volume de base pour les ordres DIRECT (non-sweep).\nCe volume sera multiplié par le multiplicateur de volume global (slider Volume %).",
+            font=("Arial", 9),
+            bg=self.bg_color,
+            fg=self.warning_color,
+            justify=tk.LEFT
+        )
+        direct_info.pack(anchor=tk.W, pady=(0, 10))
+        
+        # Conteneur horizontal
+        direct_container = tk.Frame(direct_volume_frame, bg=self.bg_color)
+        direct_container.pack(fill=tk.X)
+        
+        tk.Label(
+            direct_container,
+            text="Volume de base DIRECT (lots):",
+            font=("Arial", 10),
+            bg=self.bg_color,
+            fg=self.fg_color
+        ).pack(side=tk.LEFT, padx=5)
+        
+        # Scale pour volume de base DIRECT (0.01 à 100.00)
+        self.direct_base_volume_scale = tk.Scale(
+            direct_container,
+            from_=0.01,
+            to=100.0,
+            resolution=0.01,
+            orient=tk.HORIZONTAL,
+            variable=self.direct_base_volume_var,
+            length=300,
+            bg=self.bg_color,
+            fg=self.fg_color,
+            highlightthickness=0
+        )
+        self.direct_base_volume_scale.pack(side=tk.LEFT, padx=5)
+        
+        # Valeur affichée
+        self.direct_base_volume_value = tk.Label(
+            direct_container,
+            text=f"{self.direct_base_volume_var.get():.2f}",
+            font=("Arial", 10, "bold"),
+            bg=self.bg_color,
+            fg=self.success_color,
+            width=8
+        )
+        self.direct_base_volume_value.pack(side=tk.LEFT, padx=5)
+        self.direct_base_volume_scale.config(
+            command=lambda v: self.direct_base_volume_value.config(text=f"{float(v):.2f}")
+        )
+        
+        # Exemple avec multiplicateur
+        direct_example = tk.Label(
+            direct_volume_frame,
+            text=f"Exemple: {self.direct_base_volume_var.get():.2f} lots × {self.volume_multiplier.get()}% multiplicateur = {self.direct_base_volume_var.get() * self.volume_multiplier.get() / 100:.2f} lots effectifs",
+            font=("Arial", 9, "italic"),
+            bg=self.bg_color,
+            fg="#888888",
+            justify=tk.LEFT
+        )
+        direct_example.pack(anchor=tk.W, pady=(10, 0))
+        
+        # Mettre à jour l'exemple quand la valeur change
+        def update_direct_example(v):
+            val = float(v)
+            mult = self.volume_multiplier.get() / 100
+            direct_example.config(
+                text=f"Exemple: {val:.2f} lots × {self.volume_multiplier.get()}% multiplicateur = {val * mult:.2f} lots effectifs"
+            )
+        
+        self.direct_base_volume_scale.config(
+            command=lambda v: [
+                self.direct_base_volume_value.config(text=f"{float(v):.2f}"),
+                update_direct_example(v)
+            ]
+        )
+        
         # ===== 🌊 SWEEP - MISE DE DÉPART =====
         sweep_frame = tk.LabelFrame(
             scrollable_frame,
@@ -914,6 +1185,484 @@ class HFTBotGUI:
                 update_sweep_example(v)
             ]
         )
+        
+        # ========================================
+        # ♾️ TP INFINI & TRAILING STOP
+        # ========================================
+        trailing_frame = tk.LabelFrame(
+            scrollable_frame,
+            text="♾️ TP Infini & Trailing Stop",
+            font=("Arial", 11, "bold"),
+            bg=self.bg_color,
+            fg=self.accent_color,
+            padx=15,
+            pady=10
+        )
+        trailing_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Explication
+        trailing_info = tk.Label(
+            trailing_frame,
+            text="Système de TP automatique qui repousse le TP avant qu'il soit atteint,\nsécurise le SL au breakeven et active le trailing stop.",
+            font=("Arial", 9),
+            bg=self.bg_color,
+            fg=self.warning_color,
+            justify=tk.LEFT
+        )
+        trailing_info.pack(anchor=tk.W, pady=(0, 10))
+        
+        # Variables
+        self.initial_tp_distance_var = tk.DoubleVar(value=getattr(self.config, 'initial_tp_distance_pips', 200.0))
+        self.tp_trigger_var = tk.DoubleVar(value=getattr(self.config, 'tp_trigger_distance_pips', 100.0))
+        self.tp_extension_var = tk.DoubleVar(value=getattr(self.config, 'tp_extension_pips', 150.0))
+        self.trailing_distance_var = tk.DoubleVar(value=getattr(self.config, 'trailing_distance_pips', 30.0))
+        self.trailing_step_var = tk.DoubleVar(value=getattr(self.config, 'trailing_step_pips', 10.0))
+        self.sl_secure_var = tk.DoubleVar(value=getattr(self.config, 'sl_secure_after_trigger_pips', 10.0))
+        
+        # TP Initial (Distance loin devant)
+        initial_tp_container = tk.Frame(trailing_frame, bg=self.bg_color)
+        initial_tp_container.pack(fill=tk.X, pady=5)
+        
+        tk.Label(
+            initial_tp_container,
+            text="🎯 TP Initial (pips depuis entrée):",
+            font=("Arial", 10),
+            bg=self.bg_color,
+            fg=self.fg_color
+        ).pack(side=tk.LEFT, padx=5)
+        
+        initial_tp_scale = tk.Scale(
+            initial_tp_container,
+            from_=50,
+            to=500,
+            resolution=10,
+            orient=tk.HORIZONTAL,
+            variable=self.initial_tp_distance_var,
+            length=200,
+            bg=self.bg_color,
+            fg=self.fg_color,
+            highlightthickness=0
+        )
+        initial_tp_scale.pack(side=tk.LEFT, padx=5)
+        
+        self.initial_tp_value = tk.Label(
+            initial_tp_container,
+            text=f"{self.initial_tp_distance_var.get():.0f} pips",
+            font=("Arial", 10, "bold"),
+            bg=self.bg_color,
+            fg=self.success_color,
+            width=10
+        )
+        self.initial_tp_value.pack(side=tk.LEFT, padx=5)
+        initial_tp_scale.config(
+            command=lambda v: self.initial_tp_value.config(text=f"{float(v):.0f} pips")
+        )
+        
+        # TP Trigger (Déclenchement du trailing)
+        trigger_container = tk.Frame(trailing_frame, bg=self.bg_color)
+        trigger_container.pack(fill=tk.X, pady=5)
+        
+        tk.Label(
+            trigger_container,
+            text="⚡ Déclencheur Trailing (pips du TP):",
+            font=("Arial", 10),
+            bg=self.bg_color,
+            fg=self.fg_color
+        ).pack(side=tk.LEFT, padx=5)
+        
+        trigger_scale = tk.Scale(
+            trigger_container,
+            from_=20,
+            to=200,
+            resolution=10,
+            orient=tk.HORIZONTAL,
+            variable=self.tp_trigger_var,
+            length=200,
+            bg=self.bg_color,
+            fg=self.fg_color,
+            highlightthickness=0
+        )
+        trigger_scale.pack(side=tk.LEFT, padx=5)
+        
+        self.tp_trigger_value = tk.Label(
+            trigger_container,
+            text=f"{self.tp_trigger_var.get():.0f} pips",
+            font=("Arial", 10, "bold"),
+            bg=self.bg_color,
+            fg=self.success_color,
+            width=10
+        )
+        self.tp_trigger_value.pack(side=tk.LEFT, padx=5)
+        trigger_scale.config(
+            command=lambda v: self.tp_trigger_value.config(text=f"{float(v):.0f} pips")
+        )
+        
+        # TP Extension (Repousse)
+        extension_container = tk.Frame(trailing_frame, bg=self.bg_color)
+        extension_container.pack(fill=tk.X, pady=5)
+        
+        tk.Label(
+            extension_container,
+            text="🚀 Extension TP (pips):",
+            font=("Arial", 10),
+            bg=self.bg_color,
+            fg=self.fg_color
+        ).pack(side=tk.LEFT, padx=5)
+        
+        extension_scale = tk.Scale(
+            extension_container,
+            from_=50,
+            to=500,
+            resolution=10,
+            orient=tk.HORIZONTAL,
+            variable=self.tp_extension_var,
+            length=200,
+            bg=self.bg_color,
+            fg=self.fg_color,
+            highlightthickness=0
+        )
+        extension_scale.pack(side=tk.LEFT, padx=5)
+        
+        self.tp_extension_value = tk.Label(
+            extension_container,
+            text=f"{self.tp_extension_var.get():.0f} pips",
+            font=("Arial", 10, "bold"),
+            bg=self.bg_color,
+            fg=self.success_color,
+            width=10
+        )
+        self.tp_extension_value.pack(side=tk.LEFT, padx=5)
+        extension_scale.config(
+            command=lambda v: self.tp_extension_value.config(text=f"{float(v):.0f} pips")
+        )
+        
+        # Trailing Distance (Suivi du prix)
+        trailing_container = tk.Frame(trailing_frame, bg=self.bg_color)
+        trailing_container.pack(fill=tk.X, pady=5)
+        
+        tk.Label(
+            trailing_container,
+            text="📈 Distance Trailing (pips):",
+            font=("Arial", 10),
+            bg=self.bg_color,
+            fg=self.fg_color
+        ).pack(side=tk.LEFT, padx=5)
+        
+        trailing_scale = tk.Scale(
+            trailing_container,
+            from_=50,
+            to=500,
+            resolution=10,
+            orient=tk.HORIZONTAL,
+            variable=self.trailing_distance_var,
+            length=200,
+            bg=self.bg_color,
+            fg=self.fg_color,
+            highlightthickness=0
+        )
+        trailing_scale.pack(side=tk.LEFT, padx=5)
+        
+        self.trailing_distance_value = tk.Label(
+            trailing_container,
+            text=f"{self.trailing_distance_var.get():.0f} pips",
+            font=("Arial", 10, "bold"),
+            bg=self.bg_color,
+            fg=self.success_color,
+            width=10
+        )
+        self.trailing_distance_value.pack(side=tk.LEFT, padx=5)
+        trailing_scale.config(
+            command=lambda v: self.trailing_distance_value.config(text=f"{float(v):.0f} pips")
+        )
+        
+        # Trailing Step (Pas minimum de déplacement SL)
+        step_container = tk.Frame(trailing_frame, bg=self.bg_color)
+        step_container.pack(fill=tk.X, pady=5)
+        
+        tk.Label(
+            step_container,
+            text="👣 Pas SL (pips minimum):",
+            font=("Arial", 10),
+            bg=self.bg_color,
+            fg=self.fg_color
+        ).pack(side=tk.LEFT, padx=5)
+        
+        step_scale = tk.Scale(
+            step_container,
+            from_=10,
+            to=200,
+            resolution=10,
+            orient=tk.HORIZONTAL,
+            variable=self.trailing_step_var,
+            length=200,
+            bg=self.bg_color,
+            fg=self.fg_color,
+            highlightthickness=0
+        )
+        step_scale.pack(side=tk.LEFT, padx=5)
+        
+        self.trailing_step_value = tk.Label(
+            step_container,
+            text=f"{self.trailing_step_var.get():.0f} pips",
+            font=("Arial", 10, "bold"),
+            bg=self.bg_color,
+            fg=self.success_color,
+            width=10
+        )
+        self.trailing_step_value.pack(side=tk.LEFT, padx=5)
+        step_scale.config(
+            command=lambda v: self.trailing_step_value.config(text=f"{float(v):.0f} pips")
+        )
+        
+        # SL Sécurisé (après déclenchement)
+        secure_container = tk.Frame(trailing_frame, bg=self.bg_color)
+        secure_container.pack(fill=tk.X, pady=5)
+        
+        tk.Label(
+            secure_container,
+            text="🛡️ Sécurité SL (pips profit min):",
+            font=("Arial", 10),
+            bg=self.bg_color,
+            fg=self.fg_color
+        ).pack(side=tk.LEFT, padx=5)
+        
+        secure_scale = tk.Scale(
+            secure_container,
+            from_=10,
+            to=200,
+            resolution=10,
+            orient=tk.HORIZONTAL,
+            variable=self.sl_secure_var,
+            length=200,
+            bg=self.bg_color,
+            fg=self.fg_color,
+            highlightthickness=0
+        )
+        secure_scale.pack(side=tk.LEFT, padx=5)
+        
+        self.sl_secure_value = tk.Label(
+            secure_container,
+            text=f"+{self.sl_secure_var.get():.0f} pips",
+            font=("Arial", 10, "bold"),
+            bg=self.bg_color,
+            fg=self.success_color,
+            width=10
+        )
+        self.sl_secure_value.pack(side=tk.LEFT, padx=5)
+        secure_scale.config(
+            command=lambda v: self.sl_secure_value.config(text=f"+{float(v):.0f} pips")
+        )
+        
+        # Exemple de fonctionnement (mis à jour)
+        trailing_example = tk.Label(
+            trailing_frame,
+            text=f"Exemple: TP initial à {self.initial_tp_distance_var.get():.0f} pips.\n"
+                 f"Quand prix à {self.tp_trigger_var.get():.0f} pips du TP → TP repoussé de +{self.tp_extension_var.get():.0f} pips.\n"
+                 f"SL sécurisé à +{self.sl_secure_var.get():.0f} pips minimum, puis trailing à {self.trailing_distance_var.get():.0f} pips (par pas de {self.trailing_step_var.get():.0f} pips).",
+            font=("Arial", 9, "italic"),
+            bg=self.bg_color,
+            fg="#888888",
+            justify=tk.LEFT
+        )
+        trailing_example.pack(anchor=tk.W, pady=(10, 0))
+        
+        # Mettre à jour l'exemple dynamiquement
+        def update_trailing_example(*args):
+            initial = self.initial_tp_distance_var.get()
+            trigger = self.tp_trigger_var.get()
+            ext = self.tp_extension_var.get()
+            trail = self.trailing_distance_var.get()
+            step = self.trailing_step_var.get()
+            secure = self.sl_secure_var.get()
+            trailing_example.config(
+                text=f"Exemple: TP initial à {initial:.0f} pips.\n"
+                     f"Quand prix à {trigger:.0f} pips du TP → TP repoussé de +{ext:.0f} pips.\n"
+                     f"SL sécurisé à +{secure:.0f} pips minimum, puis trailing à {trail:.0f} pips (par pas de {step:.0f} pips)."
+            )
+        
+        self.initial_tp_distance_var.trace('w', update_trailing_example)
+        self.tp_trigger_var.trace('w', update_trailing_example)
+        self.tp_extension_var.trace('w', update_trailing_example)
+        self.trailing_distance_var.trace('w', update_trailing_example)
+        self.trailing_step_var.trace('w', update_trailing_example)
+        self.sl_secure_var.trace('w', update_trailing_example)
+        
+        # ========================================
+        # 🛡️ RISK MANAGEMENT & CIRCUIT BREAKER
+        # ========================================
+        risk_frame = tk.LabelFrame(
+            scrollable_frame,
+            text="🛡️ Circuit Breaker & Risk Management",
+            font=("Arial", 11, "bold"),
+            bg=self.bg_color,
+            fg=self.danger_color,
+            padx=15,
+            pady=10
+        )
+        risk_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Info globale
+        risk_info = tk.Label(
+            risk_frame,
+            text="Système de protection automatique contre les pertes importantes.\nChaque protection peut être activée/désactivée indépendamment.",
+            font=("Arial", 9),
+            bg=self.bg_color,
+            fg=self.warning_color,
+            justify=tk.LEFT
+        )
+        risk_info.pack(anchor=tk.W, pady=(0, 10))
+        
+        # Variables pour Circuit Breaker
+        self.risk_daily_loss_enabled_var = tk.BooleanVar(value=getattr(self.config, 'risk_daily_loss_enabled', True))
+        self.risk_max_daily_loss_var = tk.DoubleVar(value=getattr(self.config, 'risk_max_daily_loss', 500.0))
+        
+        self.risk_daily_trades_enabled_var = tk.BooleanVar(value=getattr(self.config, 'risk_daily_trades_enabled', True))
+        self.risk_max_daily_trades_var = tk.IntVar(value=getattr(self.config, 'risk_max_daily_trades', 1000))
+        
+        self.risk_consecutive_losses_enabled_var = tk.BooleanVar(value=getattr(self.config, 'risk_consecutive_losses_enabled', True))
+        self.risk_max_consecutive_losses_var = tk.IntVar(value=getattr(self.config, 'risk_max_consecutive_losses', 9))
+        self.risk_cooldown_var = tk.IntVar(value=getattr(self.config, 'risk_cooldown_after_loss_streak_minutes', 30))
+        
+        self.risk_correlation_enabled_var = tk.BooleanVar(value=getattr(self.config, 'risk_correlation_enabled', True))
+        self.risk_max_correlated_var = tk.IntVar(value=getattr(self.config, 'risk_max_correlated_positions', 7))
+        
+        self.risk_portfolio_enabled_var = tk.BooleanVar(value=getattr(self.config, 'risk_portfolio_enabled', True))
+        self.risk_max_portfolio_var = tk.DoubleVar(value=getattr(self.config, 'risk_max_portfolio_risk_percent', 65.0))
+        
+        # Protection 1: Perte journalière
+        daily_loss_frame = tk.Frame(risk_frame, bg=self.bg_color)
+        daily_loss_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Checkbutton(
+            daily_loss_frame,
+            text="📉 Limite perte journalière",
+            variable=self.risk_daily_loss_enabled_var,
+            command=self.update_risk_settings,
+            font=("Arial", 10, "bold"),
+            bg=self.bg_color,
+            fg=self.fg_color,
+            selectcolor=self.accent_color
+        ).pack(side=tk.LEFT, padx=5)
+        
+        tk.Label(daily_loss_frame, text="Max ($):", bg=self.bg_color, fg=self.fg_color, font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
+        tk.Spinbox(
+            daily_loss_frame,
+            from_=100, to=10000, increment=100,
+            textvariable=self.risk_max_daily_loss_var,
+            width=8,
+            font=("Arial", 9),
+            command=self.update_risk_settings
+        ).pack(side=tk.LEFT)
+        
+        # Protection 2: Overtrading
+        trades_frame = tk.Frame(risk_frame, bg=self.bg_color)
+        trades_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Checkbutton(
+            trades_frame,
+            text="📊 Limite trades journaliers",
+            variable=self.risk_daily_trades_enabled_var,
+            command=self.update_risk_settings,
+            font=("Arial", 10, "bold"),
+            bg=self.bg_color,
+            fg=self.fg_color,
+            selectcolor=self.accent_color
+        ).pack(side=tk.LEFT, padx=5)
+        
+        tk.Label(trades_frame, text="Max/jour:", bg=self.bg_color, fg=self.fg_color, font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
+        tk.Spinbox(
+            trades_frame,
+            from_=10, to=2000, increment=50,
+            textvariable=self.risk_max_daily_trades_var,
+            width=8,
+            font=("Arial", 9),
+            command=self.update_risk_settings
+        ).pack(side=tk.LEFT)
+        
+        # Protection 3: Pertes consécutives
+        consec_frame = tk.Frame(risk_frame, bg=self.bg_color)
+        consec_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Checkbutton(
+            consec_frame,
+            text="🔻 Limite pertes consécutives",
+            variable=self.risk_consecutive_losses_enabled_var,
+            command=self.update_risk_settings,
+            font=("Arial", 10, "bold"),
+            bg=self.bg_color,
+            fg=self.fg_color,
+            selectcolor=self.accent_color
+        ).pack(side=tk.LEFT, padx=5)
+        
+        tk.Label(consec_frame, text="Max:", bg=self.bg_color, fg=self.fg_color, font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
+        tk.Spinbox(
+            consec_frame,
+            from_=2, to=20, increment=1,
+            textvariable=self.risk_max_consecutive_losses_var,
+            width=5,
+            font=("Arial", 9),
+            command=self.update_risk_settings
+        ).pack(side=tk.LEFT, padx=5)
+        
+        tk.Label(consec_frame, text="Cooldown (min):", bg=self.bg_color, fg=self.fg_color, font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
+        tk.Spinbox(
+            consec_frame,
+            from_=5, to=120, increment=5,
+            textvariable=self.risk_cooldown_var,
+            width=5,
+            font=("Arial", 9),
+            command=self.update_risk_settings
+        ).pack(side=tk.LEFT)
+        
+        # Protection 4: Corrélation
+        corr_frame = tk.Frame(risk_frame, bg=self.bg_color)
+        corr_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Checkbutton(
+            corr_frame,
+            text="🔄 Limite positions corrélées",
+            variable=self.risk_correlation_enabled_var,
+            command=self.update_risk_settings,
+            font=("Arial", 10, "bold"),
+            bg=self.bg_color,
+            fg=self.fg_color,
+            selectcolor=self.accent_color
+        ).pack(side=tk.LEFT, padx=5)
+        
+        tk.Label(corr_frame, text="Max/direction:", bg=self.bg_color, fg=self.fg_color, font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
+        tk.Spinbox(
+            corr_frame,
+            from_=1, to=20, increment=1,
+            textvariable=self.risk_max_correlated_var,
+            width=5,
+            font=("Arial", 9),
+            command=self.update_risk_settings
+        ).pack(side=tk.LEFT)
+        
+        # Protection 5: Risque portefeuille
+        portfolio_frame = tk.Frame(risk_frame, bg=self.bg_color)
+        portfolio_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Checkbutton(
+            portfolio_frame,
+            text="💼 Limite risque portefeuille",
+            variable=self.risk_portfolio_enabled_var,
+            command=self.update_risk_settings,
+            font=("Arial", 10, "bold"),
+            bg=self.bg_color,
+            fg=self.fg_color,
+            selectcolor=self.accent_color
+        ).pack(side=tk.LEFT, padx=5)
+        
+        tk.Label(portfolio_frame, text="Max (%):", bg=self.bg_color, fg=self.fg_color, font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
+        tk.Spinbox(
+            portfolio_frame,
+            from_=10, to=100, increment=5,
+            textvariable=self.risk_max_portfolio_var,
+            width=5,
+            font=("Arial", 9),
+            command=self.update_risk_settings
+        ).pack(side=tk.LEFT)
         
         # ===== BOUTON APPLIQUER =====
         apply_button = tk.Button(
@@ -1534,21 +2283,68 @@ class HFTBotGUI:
             pos_profit_color = self.success_color if pos_profit >= 0 else self.danger_color
             self.positions_profit_label.config(text=f"Profit positions: {pos_profit:.2f}", fg=pos_profit_color)
         
-        # 🌊 Sweep Status
+        # 🌊 Sweep Status (affichage temps réel amélioré avec détails par palier)
         if hasattr(self.strategy, 'sweep_manager'):
             sweep_status = self.strategy.sweep_manager.get_status()
             
+            # Compter les positions SWEEP actives
+            sweep_positions_count = 0
+            sweep_directions = {'BUY': 0, 'SELL': 0}
+            if hasattr(self.strategy, 'position_manager'):
+                all_positions = self.strategy.position_manager.get_all_positions()
+                for pos in all_positions:
+                    # Vérifier si c'est une position SWEEP (via le commentaire)
+                    if hasattr(pos, 'comment') and pos.comment and 'SWEEP' in pos.comment:
+                        sweep_positions_count += 1
+                        sweep_directions[pos.order_type.name] += 1
+            
+            # Affichage selon l'état
             if sweep_status['active']:
+                # Sweep en cours de création
+                elapsed = sweep_status.get('elapsed_seconds', 0)
+                current_level = sweep_status.get('current_level', 1)
+                levels_total = sweep_status.get('levels_total', 4)
+                
+                # 🆕 Afficher palier actuel et progression détaillée
                 self.sweep_status_label.config(
-                    text=f"Sweep: 🌊 ACTIF ({sweep_status['direction']})",
-                    fg=self.success_color
+                    text=f"Sweep: 🌊 PALIER L{current_level}/{levels_total} ({sweep_status['direction']}) - {elapsed:.0f}s",
+                    fg=self.warning_color
                 )
                 self.sweep_direction_label.config(text=f"Direction: {sweep_status['direction']}")
-                self.sweep_progress_label.config(
-                    text=f"Progression: {sweep_status['orders_placed']}/{sweep_status['levels_total']} ordres ({sweep_status['progress']:.1f}%)"
-                )
+                
+                # 🆕 Afficher progression avec détails des paliers
+                levels_detail = sweep_status.get('levels_detail', [])
+                if levels_detail:
+                    # Construire string avec état de chaque palier
+                    paliers_str = []
+                    for lvl in levels_detail:
+                        if lvl['executed']:
+                            paliers_str.append(f"L{lvl['number']}✅({lvl['orders_at_level']})")
+                        elif lvl['number'] == current_level:
+                            paliers_str.append(f"L{lvl['number']}⏳")
+                        else:
+                            paliers_str.append(f"L{lvl['number']}⏸️")
+                    
+                    prog_text = f"Paliers: {' '.join(paliers_str)} | Total: {sweep_status['orders_placed']} ordres"
+                else:
+                    prog_text = f"Progression: {sweep_status['orders_placed']}/{sweep_status['levels_total']} ordres ({sweep_status['progress']:.1f}%)"
+                
+                self.sweep_progress_label.config(text=prog_text)
                 self.sweep_phase_label.config(text=f"Phase: {sweep_status['phase']}")
+            elif sweep_positions_count > 0:
+                # Pas de sweep actif mais des positions SWEEP ouvertes
+                directions_str = f"BUY:{sweep_directions['BUY']} SELL:{sweep_directions['SELL']}"
+                self.sweep_status_label.config(
+                    text=f"Sweep: ✅ {sweep_positions_count} positions actives",
+                    fg=self.success_color
+                )
+                self.sweep_direction_label.config(text=f"Direction: {directions_str}")
+                self.sweep_progress_label.config(
+                    text=f"Progression: {sweep_positions_count} position(s) ouverte(s)"
+                )
+                self.sweep_phase_label.config(text="Phase: GESTION")
             else:
+                # Aucun sweep actif
                 self.sweep_status_label.config(text="Sweep: INACTIF", fg=self.fg_color)
                 self.sweep_direction_label.config(text="Direction: --")
                 self.sweep_progress_label.config(text="Progression: 0/0 ordres (0.0%)")
@@ -1693,6 +2489,15 @@ class HFTBotGUI:
         """Efface les logs"""
         self.log_text.delete(1.0, tk.END)
     
+    def _save_config_to_file(self) -> None:
+        """Sauvegarde la configuration actuelle dans user_settings.json"""
+        try:
+            settings = extract_saveable_config(self.config)
+            self.settings_manager.save_settings(settings)
+            logger.debug("Configuration sauvegardée dans user_settings.json")
+        except Exception as e:
+            logger.error(f"Erreur lors de la sauvegarde de la config: {e}", exc_info=True)
+    
     def update_kill_zone(self) -> None:
         """Met à jour l'activation de la Kill Zone en temps réel"""
         self.config.kill_zone_enabled = self.enable_kill_zone_var.get()
@@ -1700,6 +2505,7 @@ class HFTBotGUI:
         color = self.success_color if self.config.kill_zone_enabled else self.danger_color
         self.log_message(f"✅ Kill Zone {status}")
         logger.info(f"Kill Zone {status}")
+        self._save_config_to_file()
     
     def update_ignore_stc(self) -> None:
         """Met à jour l'option d'ignorer le STC en temps réel"""
@@ -1708,12 +2514,49 @@ class HFTBotGUI:
         color = self.warning_color if self.config.ignore_stc else self.success_color
         self.log_message(f"⚙️ STC {status}")
         logger.info(f"STC {status}")
+        self._save_config_to_file()
+    
+    def update_mtf_filter(self) -> None:
+        """Met à jour l'activation du filtre multi-timeframe HTF en temps réel"""
+        self.config.mtf_filter_enabled = self.mtf_filter_enabled_var.get()
+        
+        # 🔥 SÉCURITÉ: Si désactivé, forcer AUSSI mtf_require_alignment à False
+        if not self.config.mtf_filter_enabled:
+            self.config.mtf_require_alignment = False
+            logger.info(f"🚀 mtf_require_alignment forcé à False (filtre HTF désactivé)")
+        
+        status = "ACTIVÉ" if self.config.mtf_filter_enabled else "DÉSACTIVÉ"
+        color = self.success_color if self.config.mtf_filter_enabled else self.warning_color
+        self.log_message(f"🎯 Filtre Multi-Timeframe HTF {status}")
+        logger.info(f"Filtre HTF (M15/M30/H1/H4) {status}")
+        
+        if self.config.mtf_filter_enabled:
+            self.log_message(f"   ⚠️ Mode Strict: Les HTF doivent être alignés pour trader")
+        else:
+            self.log_message(f"   ⚡ Mode Ultra-Réactif: Trading sans filtre HTF (plus de signaux)")
+            self.log_message(f"   🚀 mtf_require_alignment = False (désactivation complète)")
+        self._save_config_to_file()
     
     def update_max_orders(self) -> None:
         """Met à jour le nombre maximum d'ordres simultanés en temps réel"""
         self.config.max_simultaneous_orders = self.max_orders_var.get()
         self.log_message(f"📊 Max ordres simultanés: {self.config.max_simultaneous_orders}")
         logger.info(f"Max ordres simultanés configuré à {self.config.max_simultaneous_orders}")
+        self._save_config_to_file()
+    
+    def update_max_positions(self) -> None:
+        """Met à jour le nombre maximum de positions (DIRECT + SWEEP) en temps réel"""
+        self.config.max_positions = self.max_positions_var.get()
+        self.log_message(f"🎯 Max positions (DIRECT + SWEEP): {self.config.max_positions}")
+        logger.info(f"Max positions configuré à {self.config.max_positions} (système unifié)")
+        self._save_config_to_file()
+    
+    def update_cooldown(self) -> None:
+        """Met à jour le cooldown entre ordres en temps réel"""
+        self.config.min_seconds_between_trades = self.min_seconds_between_trades_var.get()
+        self.log_message(f"⏱️ Cooldown entre ordres: {self.config.min_seconds_between_trades} secondes")
+        logger.info(f"Cooldown configuré à {self.config.min_seconds_between_trades} secondes (DIRECT + SWEEP)")
+        self._save_config_to_file()
     
     def update_reactive_profit(self) -> None:
         """Met à jour l'activation du profit réactif en temps réel"""
@@ -1722,6 +2565,50 @@ class HFTBotGUI:
         color = self.success_color if self.config.reactive_profit_enabled else self.warning_color
         self.log_message(f"💰 Profit Réactif {status}")
         logger.info(f"Profit Réactif {status}")
+        self._save_config_to_file()
+    
+    def update_risk_settings(self) -> None:
+        """Met à jour tous les paramètres de Risk Management"""
+        # Perte journalière
+        self.config.risk_daily_loss_enabled = self.risk_daily_loss_enabled_var.get()
+        self.config.risk_max_daily_loss = self.risk_max_daily_loss_var.get()
+        
+        # Overtrading
+        self.config.risk_daily_trades_enabled = self.risk_daily_trades_enabled_var.get()
+        self.config.risk_max_daily_trades = self.risk_max_daily_trades_var.get()
+        
+        # Pertes consécutives
+        self.config.risk_consecutive_losses_enabled = self.risk_consecutive_losses_enabled_var.get()
+        self.config.risk_max_consecutive_losses = self.risk_max_consecutive_losses_var.get()
+        self.config.risk_cooldown_after_loss_streak_minutes = self.risk_cooldown_var.get()
+        
+        # Corrélation
+        self.config.risk_correlation_enabled = self.risk_correlation_enabled_var.get()
+        self.config.risk_max_correlated_positions = self.risk_max_correlated_var.get()
+        
+        # Risque portefeuille
+        self.config.risk_portfolio_enabled = self.risk_portfolio_enabled_var.get()
+        self.config.risk_max_portfolio_risk_percent = self.risk_max_portfolio_var.get()
+        
+        self._save_config_to_file()
+        
+        # Log des changements
+        enabled_protections = []
+        if self.config.risk_daily_loss_enabled:
+            enabled_protections.append(f"Perte jour: ${self.config.risk_max_daily_loss:.0f}")
+        if self.config.risk_daily_trades_enabled:
+            enabled_protections.append(f"Trades: {self.config.risk_max_daily_trades}")
+        if self.config.risk_consecutive_losses_enabled:
+            enabled_protections.append(f"Pertes: {self.config.risk_max_consecutive_losses}")
+        if self.config.risk_correlation_enabled:
+            enabled_protections.append(f"Corrélation: {self.config.risk_max_correlated_positions}")
+        if self.config.risk_portfolio_enabled:
+            enabled_protections.append(f"Portefeuille: {self.config.risk_max_portfolio_risk_percent:.0f}%")
+        
+        self.log_message(f"🛡️ Risk Management: {len(enabled_protections)} protections actives")
+        for prot in enabled_protections:
+            self.log_message(f"   • {prot}")
+        logger.info(f"Risk Management mis à jour: {', '.join(enabled_protections)}")
     
     def apply_parameters(self) -> None:
         """Applique tous les paramètres ajustés à la stratégie"""
@@ -1736,18 +2623,63 @@ class HFTBotGUI:
             self.config.stc_threshold_sell = self.stc_sell_var.get()
             self.config.strategy_timeframe = self.strategy_timeframe_var.get()
             
+            # Réactivité
+            self.config.tick_analysis_interval = self.tick_interval_var.get() / 1000  # Convertir ms en secondes
+            self.config.min_seconds_between_trades = int(self.min_seconds_between_trades_var.get())
+            self.config.extreme_stc_threshold = self.extreme_stc_var.get()
+            
+            # Sweep
+            self.config.sweep_base_volume = self.sweep_base_volume_var.get()
+            self.config.sweep_max_levels = int(self.sweep_levels_var.get())
+            self.config.sweep_orders_per_level = int(self.sweep_orders_per_level_var.get())
+            
+            # 📤 DIRECT - Volume de base
+            direct_vol = self.direct_base_volume_var.get()
+            if not self.config.position_sizes:
+                self.config.position_sizes = [direct_vol]
+            else:
+                self.config.position_sizes[0] = direct_vol
+            
+            # Protections avancées (déjà gérées dans update_risk_settings, mais on les inclut ici aussi)
+            self.config.risk_max_consecutive_losses = int(self.risk_max_consecutive_losses_var.get())
+            self.config.risk_cooldown_after_loss_streak_minutes = int(self.risk_cooldown_var.get())
+            self.config.risk_max_correlated_positions = int(self.risk_max_correlated_var.get())
+            self.config.risk_max_portfolio_risk_percent = self.risk_max_portfolio_var.get()
+            
             # Mettre à jour les titres des frames d'indicateurs
             new_tf = self.strategy_timeframe_var.get()
             self.ichimoku_frame.config(text=f"📊 Ichimoku {new_tf}")
             self.stc_frame.config(text=f"📈 STC {new_tf} (Schaff Trend Cycle)")
             
-            # Profit réactif (nouveau)
+            # Profit réactif
             self.config.reactive_profit_enabled = self.reactive_profit_enabled_var.get()
             self.config.profit_threshold_per_position = self.profit_threshold_per_position_var.get()
             self.config.profit_threshold_cumulative = self.profit_threshold_cumulative_var.get()
             
-            # 🌊 Sweep - Mise de départ (nouveau)
+            # 🌊 Sweep - Mise de départ
             self.config.sweep_base_volume = self.sweep_base_volume_var.get()
+            
+            # ♾️ TP Infini & Trailing Stop - Tous les nouveaux paramètres
+            self.config.initial_tp_distance_pips = self.initial_tp_distance_var.get()
+            self.config.tp_trigger_distance_pips = self.tp_trigger_var.get()
+            self.config.tp_extension_pips = self.tp_extension_var.get()
+            self.config.trailing_distance_pips = self.trailing_distance_var.get()
+            self.config.trailing_step_pips = self.trailing_step_var.get()
+            self.config.sl_secure_after_trigger_pips = self.sl_secure_var.get()
+            
+            # Compatibilité ancienne config
+            self.config.tp_proximity_pips = self.tp_trigger_var.get()
+            
+            # Mettre à jour le système TP Infini si la stratégie est en cours
+            if hasattr(self, 'strategy') and self.strategy and hasattr(self.strategy, 'infinite_tp_trailing'):
+                self.strategy.infinite_tp_trailing.update_parameters(
+                    initial_tp_distance=self.config.initial_tp_distance_pips,
+                    tp_trigger=self.config.tp_trigger_distance_pips,
+                    tp_extension=self.config.tp_extension_pips,
+                    trailing_distance=self.config.trailing_distance_pips,
+                    trailing_step=self.config.trailing_step_pips,
+                    sl_secure=self.config.sl_secure_after_trigger_pips
+                )
             
             self.log_message("=" * 60)
             self.log_message("✅ PARAMÈTRES APPLIQUÉS:")
@@ -1758,15 +2690,56 @@ class HFTBotGUI:
             self.log_message(f"   📉 Ichimoku: T={self.config.ichimoku_tenkan_sen}, K={self.config.ichimoku_kijun_sen}, S={self.config.ichimoku_senkou_span_b}")
             self.log_message(f"   📊 STC: Période={self.config.stc_period}, Achat={self.config.stc_threshold_buy:.1f}, Vente={self.config.stc_threshold_sell:.1f}")
             self.log_message(f"   ⏱️ Timeframe: {self.config.strategy_timeframe}")
+            self.log_message(f"   ⚡ Réactivité:")
+            self.log_message(f"      → Intervalle ticks: {self.config.tick_analysis_interval*1000:.1f}ms")
+            self.log_message(f"      → Délai entre trades: {self.config.min_seconds_between_trades}s")
+            self.log_message(f"      → Seuil STC extrême: {self.config.extreme_stc_threshold:.0f}")
             self.log_message(f"   💰 Profit Réactif: {'ACTIVÉ' if self.config.reactive_profit_enabled else 'DÉSACTIVÉ'}")
             if self.config.reactive_profit_enabled:
                 self.log_message(f"      → Seuil/Position: ${self.config.profit_threshold_per_position:.1f}")
                 self.log_message(f"      → Seuil Cumulatif: ${self.config.profit_threshold_cumulative:.0f}")
+            
+            # Volumes DIRECT et SWEEP
+            self.log_message(f"   📤 DIRECT - Volume de base: {self.config.position_sizes[0]:.2f} lots")
+            vol_mult = self.volume_multiplier.get() / 100
+            self.log_message(f"      → Volume effectif (avec multiplicateur {self.volume_multiplier.get()}%): {self.config.position_sizes[0] * vol_mult:.2f} lots")
+            
             self.log_message(f"   🌊 Sweep - Mise de base: {self.config.sweep_base_volume:.2f} lots")
+            self.log_message(f"      → Niveaux max: {self.config.sweep_max_levels}")
             self.log_message(f"      → Progression: 1×{self.config.sweep_base_volume:.2f} | 2×{self.config.sweep_base_volume*2:.2f} | 3×{self.config.sweep_base_volume*3:.2f} | 4×{self.config.sweep_base_volume*4:.2f}")
+            self.log_message(f"   ♾️ TP Infini:")
+            self.log_message(f"      → TP Initial: {self.config.initial_tp_distance_pips:.0f} pips (loin devant)")
+            self.log_message(f"      → Déclencheur: {self.config.tp_trigger_distance_pips:.0f} pips du TP")
+            self.log_message(f"      → Extension: +{self.config.tp_extension_pips:.0f} pips")
+            self.log_message(f"      → Trailing: {self.config.trailing_distance_pips:.0f} pips (pas de {self.config.trailing_step_pips:.0f} pips)")
+            self.log_message(f"      → Sécurité SL: +{self.config.sl_secure_after_trigger_pips:.0f} pips minimum")
+            
+            # Risk Management
+            risk_enabled = []
+            if self.config.risk_daily_loss_enabled:
+                risk_enabled.append(f"Perte jour: ${self.config.risk_max_daily_loss:.0f}")
+            if self.config.risk_daily_trades_enabled:
+                risk_enabled.append(f"Max trades: {self.config.risk_max_daily_trades}")
+            if self.config.risk_consecutive_losses_enabled:
+                risk_enabled.append(f"Pertes consécutives: {self.config.risk_max_consecutive_losses}")
+            
+            if risk_enabled:
+                self.log_message(f"   🛡️ Protections: {len(risk_enabled)} actives")
+                for prot in risk_enabled[:3]:  # Limiter à 3 pour ne pas surcharger
+                    self.log_message(f"      → {prot}")
+            
+            self.log_message(f"   🛡️ Protections Avancées:")
+            self.log_message(f"      → Pertes consécutives max: {self.config.risk_max_consecutive_losses}")
+            self.log_message(f"      → Cooldown après série: {self.config.risk_cooldown_after_loss_streak_minutes}min")
+            self.log_message(f"      → Positions corrélées max: {self.config.risk_max_correlated_positions}")
+            self.log_message(f"      → Risque portfolio max: {self.config.risk_max_portfolio_risk_percent:.0f}%")
+            
             self.log_message("=" * 60)
             
             logger.info("Paramètres de stratégie appliqués avec succès")
+            
+            # Sauvegarder dans user_settings.json
+            self._save_config_to_file()
             
             messagebox.showinfo(
                 "Succès",
