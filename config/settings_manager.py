@@ -100,10 +100,15 @@ SAVEABLE_PARAMS = {
     'risk_max_drawdown_percent',
     'risk_consecutive_losses_enabled',
     'risk_max_consecutive_losses',
+    'risk_cooldown_after_loss_streak_minutes',
     'risk_hourly_loss_enabled',
     'risk_max_hourly_loss',
     'risk_position_size_enabled',
     'risk_max_position_size',
+    'risk_correlation_enabled',
+    'risk_max_correlated_positions',
+    'risk_portfolio_enabled',
+    'risk_max_portfolio_risk_percent',
     
     # Trading
     'max_positions',
@@ -114,11 +119,13 @@ SAVEABLE_PARAMS = {
     # STC
     'stc_threshold_buy',
     'stc_threshold_sell',
+    'stc_period',
     
     # HTF
     'mtf_filter_enabled',
     'mtf_require_alignment',
     'mtf_alignment_threshold',
+    'force_mtf_bypass',  # 🔥 CRITIQUE: Permet bypass total MTF en mode ULTRA
     
     # ML
     'ml_enabled',
@@ -136,6 +143,31 @@ SAVEABLE_PARAMS = {
     # SL/TP
     'base_sl_distance',
     'base_tp_distance',
+    
+    # TP Infini & Trailing
+    'tp_proximity_pips',
+    'tp_extension_pips',
+    'trailing_distance_pips',
+    'infinite_tp_enabled',
+    
+    # Sweep/Martingale
+    'sweep_enabled',
+    'sweep_base_volume',
+    'sweep_max_levels',
+    
+    # Spread
+    'spread_threshold',
+    
+    # Ichimoku
+    'ichimoku_tenkan_sen',
+    'ichimoku_kijun_sen',
+    'ichimoku_senkou_span_b',
+    
+    # Timeframe
+    'strategy_timeframe',
+    
+    # Ignore STC
+    'ignore_stc',
 }
 
 
