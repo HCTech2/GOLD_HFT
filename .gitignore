@@ -1,11 +1,12 @@
 # ========================================
-# .gitignore pour GOLD_HFT Bot
+# .gitignore pour HFT Trading Bot v2.0
+# Système modulaire Python/Rust
 # ========================================
 
 # ============ Environnements Virtuels ============
 .venv/
+.venv2/
 venv/
-venv_balance/
 env/
 ENV/
 *.virtualenv
@@ -14,52 +15,64 @@ ENV/
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
 .Python
+*.pyc
 
 # ============ Logs ============
 *.log
+data/Live/Signaux/*.log
 hft_bot_*.log
-backtest_log.log
-data_collection.log
-correction_detection.log
-dynamic_exit_manager.log
-fiscaliste.log
-autocleaner.log
-diagnose_*.log
+backtest_*.log
 diagnostic_*.log
 
-# ============ Données Générées ML ============
+# ============ Données ML ============
+# Bases de données
 ml/data/*.db
 ml/data/*.db-journal
+ml/data/*.db-shm
+ml/data/*.db-wal
+
+# Modèles entraînés
 ml/models/*.pkl
 ml/models/*.joblib
 models/*.pkl
 models/*.joblib
 *.h5
 *.keras
+*.pt
+*.pth
+
+# Features et cache ML
+ml/cache/
+features_*.json
+scaler_*.pkl
 
 # ============ Données de Marché ============
-data/
-shared_data/
+# Données tick/OHLC collectées
+data/Live/*.csv
+data/Live/*.parquet
+data/Historical/
+
+# Données économiques
 calendar_events*.csv
+economic_data*.json
 geolocation_cache.json
 
 # ============ Configuration Personnelle ============
-config.json
+# Fichiers de config utilisateur
+config/user_settings.json
+config/saved_presets.json
+settings_*.json
+
+# Sauvegardes automatiques
+*.json.bak*
 comptable_data.json
 comptable_data.json.bak.*
-*.json.bak.*
-chart_config.json
-features.json
-hyperparams.json
-strategy_config.json
-granular_strategy_config.json
 
 # ============ Fichiers CSV Temporaires ============
 *.csv
+# EXCEPTION: Garder requirements
 !requirements*.csv
-honeypot_data.csv
 
 # ============ Builds Rust ============
 hft_rust_core/target/
@@ -68,20 +81,27 @@ hft_rust_core/Cargo.lock
 *.pyd
 *.dll
 *.dylib
+*.whl
+*.egg-info/
+
+# Artefacts maturin
+hft_rust_core/.cargo/
+hft_rust_core/build/
 
 # ============ Archives et Exports ============
 *.zip
 *.tar.gz
 *.rar
+*.7z
 HFT_Bot_Export_*/
-HFT_Bot_Complete.zip
+HFT_Bot_Complete*.zip
+backup_*.zip
 
-# ============ Anciens Scripts (non utilisés) ============
+# ============ Scripts Legacy/Deprecated ============
+# Anciens scripts non utilisés en v2.0
 Balance.py
 Collecteur.py
-Comptable.py
-Comptable2.py
-Comptable3.py
+Comptable*.py
 Config.py
 Controleur.py
 Judge.py
@@ -90,21 +110,15 @@ Metrics.py
 MLMonitoring.py
 MLValidation.py
 Organiseur.py
-POF.py
-POF1.py
+POF*.py
 Scener.py
-Sleeper.py
-SleeperParam1.py
-SleeperParam2.py
+Sleeper*.py
 TrailingTester.py
 WandB.py
 XAU_USD_HFT_Bot.py
 Zzz*.py
 ZZZZ*.py
 get_mt5_tick_volume.py
-pip_utils.py
-signal_utils.py
-time_features.py
 benchmark_indicators.py
 
 # ============ Scripts de Build/Deploy ============
@@ -112,15 +126,19 @@ create_package.ps1
 create_transfer_package.ps1
 package_for_transfer.ps1
 export_system.py
-build_rust.py
 watch_orders.ps1
 
-# ============ Tests et Scripts Temporaires ============
+# ============ Tests et Debug ============
 test_*.py
 check_*.py
-run_sleeper_*.py
+debug_*.py
+temp_*.py
+scratch_*.py
 HFT_Backtest_Visual.py
 autocleaner.py
+
+# EXCEPTION: Garder tests unitaires structurés
+!tests/test_*.py
 
 # ============ Dossiers Legacy ============
 Prototype/
@@ -129,7 +147,9 @@ SandBox/
 DiscordBOT/
 analytics/
 tools/
-Z_Comptable/
+Z_*/
+old_*/
+backup_*/
 
 # ============ Fichiers Système ============
 .DS_Store
@@ -138,6 +158,7 @@ desktop.ini
 *.swp
 *.swo
 *~
+.directory
 
 # ============ IDE et Editeurs ============
 .vscode/
@@ -145,48 +166,116 @@ desktop.ini
 *.sublime-*
 .project
 .pydevproject
+*.code-workspace
 
-# ============ Wandb (Machine Learning) ============
+# ============ Tracking ML ============
 wandb/
+.wandb/
+mlruns/
+runs/
 
 # ============ Images Debug ============
 *.png
 *.jpg
 *.jpeg
-!docs/*.png
-!assets/*.png
+*.gif
+*.bmp
+
+# EXCEPTIONS: Documentation
+!docs/**/*.png
+!docs/**/*.jpg
+!assets/**/*.png
+!assets/**/*.jpg
 
 # ============ Fichiers HTML Temporaires ============
 *.html
-!docs/*.html
+!docs/**/*.html
 
 # ============ Fichiers Texte Temporaires ============
-analyse_economique.txt
+analyse_*.txt
 env_template.txt
-CIRCUIT_BREAKER_GUIDE_VISUEL.txt
-RECAP_V2.txt
+CIRCUIT_BREAKER_*.txt
+RECAP_*.txt
+TODO_*.txt
+notes_*.txt
 
 # ============ Documentation Markdown ============
-# Exclure TOUS les .md sauf README.md principal
+# Exclure tous les .md SAUF README.md principal
 *.md
 !README.md
-
-# Exclure les .md dans les sous-dossiers aussi
 **/*.md
 !README.md
 
-# ============ KEEP: Structure Essentielle ============
-# Ces dossiers/fichiers SONT versionnés :
-# config/
-# gui/
-# trading/
-# utils/
-# ml/*.py
-# indicators/
-# hft_rust_core/src/
-# hft_rust_core/Cargo.toml
-# hft_rust_core/pyproject.toml
-# run_hft_bot.py
-# start_bot.bat
-# train_ml.bat
-*.md
+# EXCEPTIONS pour docs/
+!docs/README.md
+!docs/INSTALLATION.md
+!docs/CONFIGURATION.md
+
+# ============ Secrets et Credentials ============
+.env
+.env.*
+*.pem
+*.key
+*.crt
+secrets.json
+credentials.json
+api_keys.json
+
+# ============ KEEP: Structure Essentielle Versionnée ============
+# Ces dossiers/fichiers SONT dans le repo :
+#
+# 📁 Structure principale:
+#   ├── config/
+#   │   ├── __init__.py
+#   │   ├── trading_config.py
+#   │   ├── settings_manager.py
+#   │   └── preset_manager.py
+#   ├── gui/
+#   │   ├── __init__.py
+#   │   └── main_window.py
+#   ├── trading/
+#   │   ├── __init__.py
+#   │   ├── strategy.py
+#   │   ├── position_manager.py
+#   │   ├── risk_manager.py
+#   │   ├── sweep_manager.py
+#   │   └── infinite_tp_trailing.py
+#   ├── utils/
+#   │   ├── __init__.py
+#   │   └── logger.py
+#   ├── ml/
+#   │   ├── __init__.py
+#   │   ├── trainer.py
+#   │   └── features.py
+#   ├── indicators/
+#   │   ├── __init__.py
+#   │   └── hft_indicators.py
+#   ├── data/
+#   │   ├── __init__.py
+#   │   ├── tick_buffer.py
+#   │   └── tick_feed.py
+#   ├── models/
+#   │   ├── __init__.py
+#   │   └── data_models.py
+#   ├── analytics/
+#   │   ├── __init__.py
+#   │   └── market_observer.py
+#   ├── hft_rust_core/
+#   │   ├── Cargo.toml
+#   │   ├── pyproject.toml
+#   │   └── src/
+#   │       ├── lib.rs
+#   │       ├── tick_processor.rs
+#   │       └── indicators.rs
+#   ├── run_hft_bot.py
+#   ├── fix_all_modules.py
+#   ├── requirements.txt
+#   ├── start_bot.bat
+#   ├── train_ml.bat
+#   └── README.md
+#
+# 📁 Structure données (dossiers vides versionnés):
+#   └── data/
+#       └── Live/
+#           └── Signaux/
+#               └── .gitkeep
