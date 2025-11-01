@@ -22,12 +22,18 @@ class PositionState(Enum):
     PENDING = "PENDING"
 
 
+class PositionType(Enum):
+    """Type de position dans le système unifié HFT_DIRECT + SWEEP"""
+    DIRECT = "DIRECT"    # Position HFT_DIRECT (ordre unique)
+    SWEEP = "SWEEP"      # Position SWEEP (partie d'un groupe Martingale/Elliott)
+
+
 @dataclass
 class TradingConfig:
     """Configuration de la stratégie de trading"""
     # Symbole et portefeuille
     symbol: str = "XAUUSD-m"  # XAU/USD Micro sur TitanFX
-    initial_portfolio: float = 100002.63073723  # $100002.63 initial
+    initial_portfolio: float = 50  # $50 initial
     
     # Tailles de positions
     target_x2_thresholds: List[float] = field(default_factory=lambda: [10, 20, 40, 80, 130, 200, 300])
@@ -49,29 +55,29 @@ class TradingConfig:
     wave_lookback: int = 50
     
     # Paramètres Schaff Trend Cycle
-    stc_period: int = 10
+    stc_period: int = 2
     stc_fast_length: int = 23
     stc_slow_length: int = 50
-    stc_threshold_buy: float = 25.0   # STC < 25 = signal BUY (zone survente élargie)
-    stc_threshold_sell: float = 75.0  # STC > 75 = signal SELL (zone surachat élargie)
+    stc_threshold_buy: float = 40.0   # 🚀 ULTRA-RÉACTIF: 40 (anciennement 25) = plus de signaux BUY
+    stc_threshold_sell: float = 60.0  # 🚀 ULTRA-RÉACTIF: 60 (anciennement 75) = plus de signaux SELL
     
     # Paramètres de trading
     max_pips_sweep: int = 15000
     kill_zone_london: Tuple[int, int] = (0, 6)
     kill_zone_ny: Tuple[int, int] = (9, 16)
     kill_zone_enabled: bool = False  # Kill zone désactivée par défaut
-    max_simultaneous_orders: int = 3  # Nombre max d'ordres simultanés
-    max_positions: int = 4  # Nombre maximum de positions ouvertes simultanément
-    min_seconds_between_trades: int = 30  # Cooldown minimum entre trades (en secondes)
+    max_simultaneous_orders: int = 8  # 🚀 ULTRA-RÉACTIF: 8 ordres (anciennement 3)
+    max_positions: int = 10  # 🚀 ULTRA-RÉACTIF: 10 positions (anciennement 4)
+    min_seconds_between_trades: int = 5  # 🚀 ULTRA-RÉACTIF: 5 secondes (anciennement 30)
     ignore_stc: bool = False  # Ignorer le STC pour les signaux
     
     # Paramètres HFT (High Frequency Trading)
     tick_buffer_size: int = 100000  # Nombre de ticks à conserver en mémoire
-    tick_analysis_interval: float = 0.001  # Délai minimal 1ms = 1000 checks/sec (évite CPU 100%)
+    tick_analysis_interval: float = 0.0001  # 🚀 ULTRA-RÉACTIF: 0.1ms = 10000 checks/sec (anciennement 0.001)
     
     # Seuils de réactivité
     min_tick_volume: int = 1
-    spread_threshold: float = 1.0  # Spread max en dollars (0.01$ à 20$)
+    spread_threshold: float = 10.05  # Spread max en dollars (0.01$ à 20$)
     
     # ============================================================================
     # TIMEFRAME DE LA STRATÉGIE (Configurable)
@@ -97,7 +103,7 @@ class TradingConfig:
 
     # Trading sans croisement Ichimoku (pour signaux STC extrêmes)
     allow_no_crossover_on_extreme_stc: bool = True  # Autoriser trade sans croisement si STC très extrême
-    extreme_stc_threshold: float = 5.0  # Seuil pour considérer STC extrême (STC<5 ou STC>95)
+    extreme_stc_threshold: float = 15.0  # 🚀 ULTRA-RÉACTIF: 15.0 (anciennement 5.0) = plus tolérant
 
     # ============================================================================
     # SYSTÈME DE PRIORITÉ TICK + CONFIANCE HTF (Activable/Désactivable)
@@ -142,11 +148,42 @@ class TradingConfig:
     trailing_distance_base: float = 4.0
     
     # ============================================================================
+    # SYSTÈME TP INFINI & TRAILING STOP (Configurable via GUI)
+    # ============================================================================
+    
+    # 🔥 TP Initial - Distance TRÈS loin devant le prix (Gold bouge de 20-50$/jour)
+    initial_tp_distance_pips: float = 1000.0  # Distance TP initial depuis l'entrée (en pips) - TP TRÈS loin devant (10.00$)
+    
+    # 🔥 TP Infini - Déclenchement du trailing
+    tp_trigger_distance_pips: float = 300.0  # Distance du TP (en pips) pour déclencher le trailing (3.00$)
+    tp_extension_pips: float = 500.0  # De combien repousser le TP (en pips) après déclenchement (5.00$)
+    
+    # Trailing Stop - Suivi du prix
+    trailing_distance_pips: float = 200.0  # 🔥 Distance du trailing stop derrière le prix (2.00$) - ÉLARGI pour volatilité Gold
+    trailing_step_pips: float = 50.0  # 🔥 Pas de déplacement du SL (0.50$) - minimum de mouvement
+    
+    # Sécurité SL - Sécurisation progressive
+    sl_secure_after_trigger_pips: float = 50.0  # 🔥 Sécuriser +50 pips (0.50$) après 1er déclenchement - PROFIT MINIMUM GARANTI
+    sl_breakeven_enabled: bool = True  # Mettre SL au breakeven après déclenchement
+    
+    # Activation
+    infinite_tp_enabled: bool = True  # Activer le système TP infini
+    
+    # Compatibilité anciennes versions (alias)
+    @property
+    def tp_proximity_pips(self):
+        return self.tp_trigger_distance_pips
+    
+    @tp_proximity_pips.setter
+    def tp_proximity_pips(self, value):
+        self.tp_trigger_distance_pips = value
+    
+    # ============================================================================
     # CIRCUIT BREAKER & RISK MANAGEMENT (Activable/Désactivable)
     # ============================================================================
     
     # Activation globale du Circuit Breaker
-    circuit_breaker_enabled: bool = True  # Activer/Désactiver TOUT le système de protection
+    circuit_breaker_enabled: bool = False  # Activer/Désactiver TOUT le système de protection
     
     # Protection 1: Perte journalière
     risk_daily_loss_enabled: bool = True  # Activer limite de perte journalière
@@ -154,7 +191,7 @@ class TradingConfig:
     
     # Protection 2: Overtrading
     risk_daily_trades_enabled: bool = True  # Activer limite de trades/jour
-    risk_max_daily_trades: int = 500  # Nombre max de trades par jour
+    risk_max_daily_trades: int = 5000  # 🚀 ULTRA-RÉACTIF: 5000 trades/jour (anciennement 1000)
     
     # Protection 3: Pertes consécutives
     risk_consecutive_losses_enabled: bool = True  # Activer détection pertes consécutives
@@ -162,8 +199,8 @@ class TradingConfig:
     risk_cooldown_after_loss_streak_minutes: int = 30  # Durée pause après série de pertes
     
     # Protection 4: Drawdown
-    risk_drawdown_enabled: bool = True  # Activer limite de drawdown
-    risk_max_drawdown_percent: float = 50.0  # Drawdown max en % du capital
+    risk_drawdown_enabled: bool = False  # 🚀 DÉSACTIVÉ - Pas de limite drawdown
+    risk_max_drawdown_percent: float = 50.0  # Drawdown max en % du capital (ignoré si désactivé)
     
     # Protection 5: Corrélation des positions
     risk_correlation_enabled: bool = True  # Activer limite positions corrélées
@@ -179,10 +216,11 @@ class TradingConfig:
     volume_max_multiplier: float = 2.0  # Multiplicateur maximum si ML confiant
     
     # Filtrage multi-timeframe (Higher TimeFrames)
-    mtf_filter_enabled: bool = True  # Activer le filtrage HTF
-    mtf_require_alignment: bool = True  # Exiger alignement des timeframes pour trader
+    mtf_filter_enabled: bool = False  # 🚀 DÉSACTIVÉ PAR DÉFAUT - Activer via GUI pour filtrage HTF
+    mtf_require_alignment: bool = False  # 🚀 ULTRA-RÉACTIF: Désactivé pour plus de liberté (anciennement True)
     mtf_timeframes: List[str] = field(default_factory=lambda: ['M15', 'M30', 'H1', 'H4'])  # Timeframes HTF à analyser
     mtf_alignment_threshold: int = 1  # Nombre minimum de TF alignés (1/4 suffit si les autres sont None)
+    force_mtf_bypass: bool = False  # 🔥 CRITIQUE: Bypass total du MTF même si mtf_filter_enabled=True (Mode 6 ULTRA)
     
     # Cache des indicateurs
     indicators_cache_enabled: bool = True  # Activer le cache pour performances
@@ -194,8 +232,17 @@ class TradingConfig:
     # SWEEP PROGRESSIF - MARTINGALE ADDITIVE
     # ============================================================================
     
+    # Activation du système Sweep
+    sweep_enabled: bool = True  # Activer/désactiver le sweep progressif
+    
     # Volume de base pour le sweep (première position)
     sweep_base_volume: float = 0.01  # Mise de départ (0.01 à 100.00 lots)
+    
+    # Nombre maximum de niveaux Elliott Wave
+    sweep_max_levels: int = 5  # Nombre de niveaux (2-8)
+    
+    # Nombre d'ordres à placer par niveau
+    sweep_orders_per_level: int = 10  # Ordres par niveau (1-10)
     
     # Logique de progression : ADDITIVE (pas multiplicative)
     # Ordre 1 : base_volume
